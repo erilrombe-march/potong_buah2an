@@ -304,7 +304,7 @@ AFRAME.registerComponent('sword', {
 AFRAME.registerComponent('slice-game', {
   init() {
     this.objs = []; this.now = 0;
-    this.S = { score: 0, lives: 3, time: 60, run: false, combo: 0, last: 0, next: 0, best: 0 };
+    this.S = { score: 0, lives: 5, time: 60, run: false, combo: 0, last: 0, next: 0, best: 0 };
     try { this.S.best = +localStorage.getItem('fs-best') || 0; } catch (e) {}
     const P = Math.PI;
     this.G = {
@@ -339,7 +339,7 @@ AFRAME.registerComponent('slice-game', {
     const cv = this.cv, rs = () => { cv.width = innerWidth; cv.height = innerHeight; };
     rs(); addEventListener('resize', rs);
     let down = false, pv = null;
-    addEventListener('pointerdown', e => { down = true; pv = [e.clientX, e.clientY]; this.pts = []; this.mouse(pv, pv); });
+    addEventListener('pointerdown', e => { down = true; pv = [e.clientX, e.clientY]; this.pts = []; this.mouse(pv, pv); this.clickBtn(e.clientX, e.clientY); });
     addEventListener('pointerup', () => down = false);
     addEventListener('pointermove', e => {
       if (!down) return;
@@ -372,24 +372,46 @@ AFRAME.registerComponent('slice-game', {
 
   showMenu(txt) {
     this.clear();
-    const t = this.F[0], m = this.fruitMesh(t, 1.45);
-    m.position.set(0, 1.4, -1.4);
-    this.add({ m, v: new T.Vector3(), sp: new T.Vector3(0, 1, 0), kind: 'start', r: .31, t, hit: true, g: 0 });
+    const m = this.makeButton(); m.position.set(0, 1.4, -1.4);
+    this.add({ m, v: new T.Vector3(), sp: new T.Vector3(), kind: 'start', r: 0, hit: false, g: 0 });
+    this.btn = m;
     this.menu.setAttribute('visible', true);
     document.getElementById('sub').setAttribute('value',
-      txt || 'Tebas semangka untuk mulai\nKontroler VR: ayunkan pedang (atau tekan trigger)\nDesktop / HP: seret mouse atau jari');
+      txt || 'Tekan tombol MULAI\nKontroler VR: tekan trigger atau sentuh tombol dengan pedang\nDesktop / HP: klik atau ketuk tombol');
     this.hudUp();
   },
   start() {
     const S = this.S;
-    this.clear(); Object.assign(S, { score: 0, lives: 3, time: 60, run: true, combo: 0, next: this.now + 700 });
+    this.btn = null; this.clear(); Object.assign(S, { score: 0, lives: 5, time: 60, run: true, combo: 0, next: this.now + 700 });
     this.menu.setAttribute('visible', false); this.hudUp(); sfx('cut');
   },
   end() {
     const S = this.S; S.run = false; S.best = Math.max(S.best, S.score);
     try { localStorage.setItem('fs-best', S.best); } catch (e) {}
     document.getElementById('title').setAttribute('value', S.lives <= 0 ? 'GAME OVER' : 'WAKTU HABIS!');
-    this.showMenu(`Skor: ${S.score}    Terbaik: ${S.best}\nTebas semangka untuk main lagi`);
+    this.showMenu(`Skor: ${S.score}    Terbaik: ${S.best}\nTekan tombol MULAI untuk main lagi`);
+  },
+
+  /* Tombol MULAI 3D (teks digambar di canvas) */
+  makeButton() {
+    const face = new T.MeshBasicMaterial({ transparent: true, map: cvTex(512, 160, (c, w, h) => {
+      const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#2ee59d'); g.addColorStop(1, '#0a9f6a');
+      c.fillStyle = g; c.beginPath();
+      if (c.roundRect) c.roundRect(4, 4, w - 8, h - 8, 36); else c.rect(4, 4, w - 8, h - 8);
+      c.fill(); c.lineWidth = 8; c.strokeStyle = '#ffffff'; c.stroke();
+      c.font = 'bold 84px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillStyle = 'rgba(0,0,0,.3)'; c.fillText('MULAI', w / 2 + 4, h / 2 + 6);
+      c.fillStyle = '#fff'; c.fillText('MULAI', w / 2, h / 2 + 2);
+    }) });
+    const side = new T.MeshStandardMaterial({ color: 0x0a7a52, roughness: .5 });
+    return new T.Mesh(new T.BoxGeometry(1, .32, .08), [side, side, side, side, face, side]);
+  },
+  /* Klik / ketuk tombol dengan mouse atau jari */
+  clickBtn(x, y) {
+    const cam = this.el.camera;
+    if (this.S.run || !this.btn || !cam || this.el.is('vr-mode')) return;
+    this.ray.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), cam);
+    if (this.ray.ray.intersectsBox(new T.Box3().setFromObject(this.btn).expandByScalar(.03))) this.start();
   },
 
   /* Buah utuh: kulit bertekstur + hiasan (tangkai apel, daun, ujung lemon) */
@@ -524,6 +546,14 @@ AFRAME.registerComponent('slice-game', {
         if (!o.hit) continue;
         const p = o.m.position;
         if (Math.min(segDist(p, s.base, s.tip), segDist(p, s.pBase, s.pTip)) < o.r + .035) this.slice(o);
+      }
+    }
+
+    // tombol MULAI: berdenyut pelan, bisa disentuh pedang VR
+    if (!S.run && this.btn) {
+      this.btn.scale.setScalar(1 + .03 * Math.sin(time / 250));
+      for (const s of this.swords) {
+        if (s.speed > 1 && Math.min(segDist(this.btn.position, s.base, s.tip), segDist(this.btn.position, s.pBase, s.pTip)) < .4) { this.start(); break; }
       }
     }
 
